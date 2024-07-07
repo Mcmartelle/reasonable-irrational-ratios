@@ -7,6 +7,7 @@ import Color exposing (hsl, toCssString)
 import Html exposing (..)
 import Html.Attributes exposing (class, disabled, href, style, type_, value)
 import Html.Events exposing (..)
+import Random
 import Svg exposing (Svg, circle, line, rect, svg)
 import Svg.Attributes exposing (cx, cy, fill, height, r, rx, ry, stroke, strokeWidth, viewBox, width, x, x1, x2, y, y1, y2)
 
@@ -38,6 +39,10 @@ type alias Model =
     , eRatioHistogram : List Datum
     , piRatioValues : List Float
     , piRatioHistogram : List Datum
+    , whiteNoiseValues : List Float
+    , whiteNoiseHistogram : List Datum
+    , blueNoiseValues : List Float
+    , blueNoiseHistogram : List Datum
     }
 
 
@@ -52,6 +57,10 @@ init _ =
       , eRatioHistogram = addToHistogram initialHistogram seed
       , piRatioValues = [ seed ]
       , piRatioHistogram = addToHistogram initialHistogram seed
+      , whiteNoiseValues = [ seed ]
+      , whiteNoiseHistogram = addToHistogram initialHistogram seed
+      , blueNoiseValues = [ seed ]
+      , blueNoiseHistogram = addToHistogram initialHistogram seed
       }
     , Cmd.none
     )
@@ -100,6 +109,8 @@ initialHistogram =
 
 type Msg
     = IncrementColors
+    | NewWhiteNoise Float
+    | NewBlueNoise (List Float)
     | DecrementColors
     | ResetColors
 
@@ -141,7 +152,16 @@ update msg model =
                         Nothing ->
                             model.seed
             in
-            ( { model | goldenRatioValues = [ nextGoldenRatioValue ] ++ model.goldenRatioValues, goldenRatioHistogram = addToHistogram model.goldenRatioHistogram nextGoldenRatioValue, eRatioValues = [ nextERatioValue ] ++ model.eRatioValues, silverRatioValues = [ nextSilverRatioValue ] ++ model.silverRatioValues, silverRatioHistogram = addToHistogram model.silverRatioHistogram nextSilverRatioValue, eRatioHistogram = addToHistogram model.eRatioHistogram nextERatioValue, piRatioValues = [ nextPiRatioValue ] ++ model.piRatioValues, piRatioHistogram = addToHistogram model.piRatioHistogram nextPiRatioValue }, Cmd.none )
+            ( { model | goldenRatioValues = [ nextGoldenRatioValue ] ++ model.goldenRatioValues, goldenRatioHistogram = addToHistogram model.goldenRatioHistogram nextGoldenRatioValue, eRatioValues = [ nextERatioValue ] ++ model.eRatioValues, silverRatioValues = [ nextSilverRatioValue ] ++ model.silverRatioValues, silverRatioHistogram = addToHistogram model.silverRatioHistogram nextSilverRatioValue, eRatioHistogram = addToHistogram model.eRatioHistogram nextERatioValue, piRatioValues = [ nextPiRatioValue ] ++ model.piRatioValues, piRatioHistogram = addToHistogram model.piRatioHistogram nextPiRatioValue }, Random.generate NewWhiteNoise (Random.float 0 1) )
+
+        NewWhiteNoise nextWhiteNoiseValue ->
+            ({model | whiteNoiseValues = [ nextWhiteNoiseValue ] ++ model.whiteNoiseValues, whiteNoiseHistogram = addToHistogram model.whiteNoiseHistogram nextWhiteNoiseValue }, Random.generate NewBlueNoise (blueCandidates ((List.length model.blueNoiseValues) + 1 )))
+
+        NewBlueNoise blueNoiseCandidates ->
+            let 
+                nextBlueNoiseValue = getFarthest model.blueNoiseValues blueNoiseCandidates
+            in
+            ({model | blueNoiseValues = [ nextBlueNoiseValue ] ++ model.blueNoiseValues, blueNoiseHistogram = addToHistogram model.blueNoiseHistogram nextBlueNoiseValue }, Cmd.none)
 
         DecrementColors ->
             ( { model
@@ -201,6 +221,34 @@ update msg model =
 
                         Nothing ->
                             model.piRatioHistogram
+                , whiteNoiseValues =
+                    case List.tail model.whiteNoiseValues of
+                        Just tailValues ->
+                            tailValues
+
+                        Nothing ->
+                            []
+                , whiteNoiseHistogram =
+                    case List.head model.whiteNoiseValues of
+                        Just headValue ->
+                            removeFromHistogram model.whiteNoiseHistogram headValue
+
+                        Nothing ->
+                            model.whiteNoiseHistogram
+                , blueNoiseValues =
+                    case List.tail model.blueNoiseValues of
+                        Just tailValues ->
+                            tailValues
+
+                        Nothing ->
+                            []
+                , blueNoiseHistogram =
+                    case List.head model.blueNoiseValues of
+                        Just headValue ->
+                            removeFromHistogram model.blueNoiseHistogram headValue
+
+                        Nothing ->
+                            model.blueNoiseHistogram
               }
             , Cmd.none
             )
@@ -215,6 +263,10 @@ update msg model =
                 , eRatioHistogram = addToHistogram initialHistogram seed
                 , piRatioValues = [ seed ]
                 , piRatioHistogram = addToHistogram initialHistogram seed
+                , whiteNoiseValues = [ seed ]
+                , whiteNoiseHistogram = addToHistogram initialHistogram seed
+                , blueNoiseValues = [ seed ]
+                , blueNoiseHistogram = addToHistogram initialHistogram seed
               }
             , Cmd.none
             )
@@ -243,6 +295,31 @@ addToBucket datum value =
         ( _, _ ) ->
             datum
 
+
+blueCandidates : Int -> Random.Generator (List Float)
+blueCandidates n = 
+    Random.list (n + 1) (Random.float 0 1)
+
+getFarthest : List Float -> List Float -> Float
+getFarthest values candidates =
+    Tuple.second <| List.foldl maxuple (0.0, 0.0) <| List.map2 getClosest (List.repeat (List.length candidates) values) candidates
+
+
+
+maxuple : (Float, Float) -> (Float, Float) -> (Float, Float)
+maxuple currMax tupy =
+    if Tuple.first tupy > Tuple.first currMax then tupy else currMax
+
+
+getClosest : List Float -> Float -> ( Float, Float )
+getClosest values candidate = 
+    case (List.minimum ( List.map2 absoluteDifference values (List.repeat (List.length values) candidate ))) of
+        Just closest -> ( closest, candidate )
+        Nothing -> ( seed, seed )
+
+absoluteDifference : Float -> Float -> Float
+absoluteDifference a b =
+    abs (a - b)
 
 removeFromHistogram : List Datum -> Float -> List Datum
 removeFromHistogram data value =
@@ -307,6 +384,18 @@ view model =
                 , span [ style "font-family" "monospace" ] [ Html.text <| String.fromFloat pi ]
                 , colorCircle model.piRatioValues
                 , histogram model.piRatioHistogram
+                ]
+            , div [ class "col" ]
+                [ h3 [] [ Html.text "White Noise" ]
+                , span [ style "font-family" "monospace" ] [ Html.text "\"true randomness\""]
+                , colorCircle model.whiteNoiseValues
+                , histogram model.whiteNoiseHistogram
+                ]
+            , div [ class "col" ]
+                [ h3 [] [ Html.text "Blue Noise" ]
+                , span [ style "font-family" "monospace" ] [ Html.text "\"smooth randomish\""]
+                , colorCircle model.blueNoiseValues
+                , histogram model.blueNoiseHistogram
                 ]
             ]
         ]
